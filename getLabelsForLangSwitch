@@ -1,0 +1,142 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+
+#   -------------------------------------------------------------
+#   Wikidata scripts - get labels
+#   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#   Author:         Sébastien Santoro aka Dereckson
+#   Created:        2016-07-17
+#   -------------------------------------------------------------
+
+
+import argparse
+import collections
+import json
+import urllib
+
+
+#   -------------------------------------------------------------
+#   Parses arguments
+#   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+parser = argparse.ArgumentParser(
+    description='Gets labels from a Wikidata item.'
+)
+parser.add_argument('item',
+                    help="a wikidata item (e.g. Q42)")
+parser.add_argument("-s", "--sitelinks",
+                    action="store_true",
+                    help="increase output verbosity")
+
+
+#   -------------------------------------------------------------
+#   Get data methods
+#   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+def get_wikidata_item(item_id):
+    """Gets a dictionary filled with a Wikidata item,
+       from the JSON entity data API."""
+    url = "https://www.wikidata.org/wiki/Special:EntityData/" + \
+        normalize_item_id(item_id) + ".json"
+    response = urllib.urlopen(url)
+    entities = json.load(response)
+
+    item = entities.values()[0].values()[0]
+
+    return item
+
+
+def get_wikipedia_links(item):
+    """Gets site links for Wikipedia"""
+    sitelinks = {}
+
+    for sitelink in item['sitelinks'].values():
+        site = sitelink['site']
+        if is_wikipedia(site):
+            lang = extract_wikipedia_code(site)
+            sitelinks[lang] = sitelink['title']
+
+    return sitelinks
+
+
+def get_labels(item):
+    """Gets item labels as an ordered dictionary."""
+    return collections.OrderedDict(sorted(item['labels'].items())).values()
+
+
+#   -------------------------------------------------------------
+#   Tasks methods
+#   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+def print_labels(item):
+    """Prints labels."""
+    labels = get_labels(item)
+    for label in labels:
+        print("|" + label['language'] + "=" + label['value'])
+
+
+def print_labels_and_site_links(item):
+    """Prints labels, with site links."""
+    sitelinks = get_wikipedia_links(item)
+    labels = get_labels(item)
+
+    for label in labels:
+        lang = label['language']
+        if lang in sitelinks:
+            print("|" + lang + "=[[:" + lang + ":" +
+                  sitelinks[lang] + "|" + label['value'] + "]]")
+        else:
+            print("|" + lang + "=" + label['value'])
+
+
+#   -------------------------------------------------------------
+#   Helper methods
+#   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+def normalize_item_id(item_id):
+    try:
+        return 'Q' + str(int(item_id))
+    except ValueError:
+        try:
+            item_id_string = str(item_id)
+        except ValueError:
+            raise TypeError("Item must be an integer or a string")
+        if item_id_string[0].upper() == 'Q':
+            try:
+                return 'Q' + str(int(item_id_string[1:]))
+            except ValueError:
+                raise ValueError(
+                    "When the item is a string beginning by Q, "
+                    "all the remaining of string must represent an integer")
+    raise ValueError("Item must be an integer or a string beginning by Q")
+
+
+def is_wikipedia(site):
+    """Determines if a database-like site name could be a Wikipedia site."""
+    return site.endswith('wiki')
+
+
+def extract_wikipedia_code(site):
+    """Extracts the wikipedia code of a database-like site name
+       (e.g. eowiki → eo)."""
+    return site[0:site.rindex('wiki')]
+
+
+#   -------------------------------------------------------------
+#   Runs script
+#   Procedural code
+#   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+args = parser.parse_args()
+
+item_id = args.item
+item = get_wikidata_item(item_id)
+if args.sitelinks:
+    print_labels_and_site_links(item)
+else:
+    print_labels(item)
